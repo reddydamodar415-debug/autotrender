@@ -265,7 +265,7 @@ canvas{width:100%;height:100%;display:block;}
 <div class="refresh-bar"><div class="refresh-fill" id="refreshFill"></div></div>
 
 <!-- SERVER STATUS BANNER -->
-<div id="serverBanner" class="server-banner">
+<div id="serverBanner" onclick="loginUpstox()" style="cursor:pointer" class="server-banner">
   ⚠️ Connecting to backend server at <strong id="serverUrl">https://autotrender.onrender.com</strong>…
   <button onclick="retryServer()" style="margin-left:auto;background:transparent;border:1px solid var(--short);color:var(--short);border-radius:3px;padding:3px 8px;cursor:pointer;font-family:var(--mono);font-size:10px;">RETRY</button>
 </div>
@@ -467,7 +467,7 @@ canvas{width:100%;height:100%;display:block;}
 'use strict';
 
 // ═══ CONFIG ═══
-const API = ''; // Empty = same origin (served by FastAPI). Change to 'http://your-server:8000' if separate
+const API = 'https://autotrender.onrender.com'; // Render backend
 const SYMS = {
   NIFTY:     {base:23400, color:'#3b82f6', step:50,  lot:75},
   BANKNIFTY: {base:51200, color:'#a78bfa', step:200, lot:35},
@@ -500,8 +500,8 @@ async function apiFetch(path, fallback=null) {
 }
 
 async function checkServer() {
-  const h = await apiFetch('/health');
-  if (h && h.status === 'ok') {
+  const h = await apiFetch('/');
+  if (h && (h.status === 'ok' || h.status === 'AutoTrender Backend Running' || h.version)) {
     serverOnline = true;
     const b = document.getElementById('serverBanner');
     b.className = 'server-banner ok';
@@ -513,6 +513,27 @@ async function checkServer() {
 }
 
 function retryServer() { checkServer().then(ok => { if(ok) fetchAllData(); }); }
+function loginUpstox() {
+  const authUrl = API + '/api/auth/url';
+  fetch(authUrl).then(r=>r.json()).then(d=>{
+    if(d.url) window.open(d.url,'_blank');
+  }).catch(()=>{ window.open(API + '/api/auth/url','_blank'); });
+}
+// Auto-extract code from URL on page load
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if(code){
+    fetch(API+'/api/auth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})})
+      .then(r=>r.json()).then(d=>{
+        if(d.success){
+          showToast('✅ Upstox connected! Loading live data…','live');
+          window.history.replaceState({},'',window.location.pathname);
+          setTimeout(()=>{ checkServer().then(ok=>{ if(ok) fetchAllData(); }); },1000);
+        }
+      }).catch(console.error);
+  }
+})();
 
 // ═══ MASTER FETCH ═══
 async function fetchAllData() {
