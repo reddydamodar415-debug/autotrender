@@ -1,87 +1,164 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, redirect
 from flask_cors import CORS
 import requests
-import json
+import os
 import time
 
 app = Flask(__name__)
 CORS(app, origins="*")
 
-NSE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.nseindia.com/",
-    "Connection": "keep-alive",
+API_KEY = os.environ.get("UPSTOX_API_KEY", "")
+SECRET = os.environ.get("UPSTOX_SECRET", "")
+REDIRECT_URI = os.environ.get("UPSTOX_REDIRECT_URI", "https://reddydamodar415-debug.github.io/autotrender")
+
+# In-memory token store
+TOKEN_STORE = {"access_token": None, "expires_at": 0}
+
+UPSTOX_SYMBOLS = {
+    "NIFTY": "NSE_INDEX|Nifty 50",
+    "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "SENSEX": "BSE_INDEX|SENSEX",
+    "MIDCAP": "NSE_INDEX|Nifty Midcap 50"
 }
 
-NSE_SESSION = requests.Session()
-NSE_SESSION.headers.update(NSE_HEADERS)
-NSE_LAST_COOKIE_TIME = 0
+def get_headers():
+    return {
+        "Authorization": f"Bearer {TOKEN_STORE['access_token']}",
+        "Accept": "application/json"
+    }
 
-def refresh_nse_cookies():
-    global NSE_LAST_COOKIE_TIME
-    try:
-        NSE_SESSION.get("https://www.nseindia.com", timeout=10)
-        NSE_LAST_COOKIE_TIME = time.time()
-    except:
-        pass
-
-def get_nse_data(url):
-    global NSE_LAST_COOKIE_TIME
-    if time.time() - NSE_LAST_COOKIE_TIME > 300:
-        refresh_nse_cookies()
-    try:
-        resp = NSE_SESSION.get(url, timeout=15)
-        if resp.status_code == 200:
-            return resp.json()
-    except:
-        pass
-    return None
+def is_token_valid():
+    return TOKEN_STORE["access_token"] and time.time() < TOKEN_STORE["expires_at"]
 
 @app.route("/")
 def index():
-    return jsonify({"status": "AutoTrender Backend Running", "version": "1.0"})
+    return jsonify({"status": "AutoTrender Backend Running", "version": "2.0", "upstox": is_token_valid()})
+
+@app.route("/api/auth/url")
+def auth_url():
+    url = (
+        f"https://api.upstox.com/v2/login/authorization/dialog"
+        f"?client_id={API_KEY}"
+        f"&redirect_uri={REDIRECT_URI}"
+        f"&response_type=code"
+    )
+    return jsonify({"url": url})
+
+@app.route("/api/auth/token", methods=["POST"])
+def exchange_token():
+    data = request.get_json()
+    code = data.get("code")
+    if not code:
+        return jsonify({"error": "No code provided"}), 400
+    try:
+        resp = requests.post(
+            "https://api.upstox.com/v2/login/authorization/token",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data={
+                "code": code,
+                "client_id": API_KEY,
+                "client_secret": SECRET,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code"
+            },
+            timeout=15
+        )
+        result = resp.json()
+        if "access_token" in result:
+            TOKEN_STORE["access_token"] = result["access_token"]
+            TOKEN_STORE["expires_at"] = time.time() + 86400
+            return jsonify({"success": True, "message": "Token saved"})
+        return jsonify({"error": result}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/auth/save", methods=["POST"])
+def save_token():
+    data = request.get_json()
+    token = data.get("token")
+    if not token:
+        return jsonify({"error": "No token"}), 400
+    TOKEN_STORE["access_token"] = token
+    TOKEN_STORE["expires_at"] = time.time() + 86400
+    return jsonify({"success": True})
+
+@app.route("/api/auth/status")
+def auth_status():
+    return jsonify({"authenticated": is_token_valid()})
 
 @app.route("/api/indices")
 def indices():
-    data = get_nse_data("https://www.nseindia.com/api/allIndices")
-    if data:
-        return jsonify(data)
-    return jsonify({"error": "Failed to fetch indices"}), 500
+    if not is_token_valid():
+        return jsonify({"error": "Not authenticated", "auth_required": True}), 401
+    try:
+        symbols = ",".join(UPSTOX_SYMBOLS.values())
+        resp = requests.get(
+            f"https://api.upstox.com/v2/market-quote/quotes?symbol={symbols}",
+            headers=get_headers(),
+            timeout=15
+        )
+        data = resp.json()
+        if data.get("status") == "success":
+            result = []
+            for name, sym in UPSTOX_SYMBOLS.items():
+                q = data["data"].get(sym.replace("|", ":"), {})
+                if q:
+                    result.append({
+                        "index": name,
+                        "last": q.get("last_price", 0),
+                        "percentChange": round(((q.get("last_price",0) - q.get("ohlc",{}).get("close",1)) / max(q.get("ohlc",{}).get("close",1),1)) * 100, 2),
+                        "previousClose": q.get("ohlc", {}).get("close", 0)
+                    })
+            return jsonify({"data": result})
+        return jsonify({"error": "Upstox error", "detail": data}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/option-chain/<symbol>")
 def option_chain(symbol):
-    url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
-    data = get_nse_data(url)
-    if data:
-        return jsonify(data)
-    return jsonify({"error": "Failed to fetch option chain"}), 500
+    if not is_token_valid():
+        return jsonify({"error": "Not authenticated", "auth_required": True}), 401
+    try:
+        upstox_sym = UPSTOX_SYMBOLS.get(symbol.upper(), UPSTOX_SYMBOLS["NIFTY"])
+        resp = requests.get(
+            f"https://api.upstox.com/v2/option/chain?instrument_key={upstox_sym.replace('|',':')}&expiry_date=",
+            headers=get_headers(),
+            timeout=15
+        )
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route("/api/fiidii")
-def fiidii():
-    data = get_nse_data("https://www.nseindia.com/api/fiidiiTradeReact")
-    if data:
-        return jsonify(data)
-    return jsonify({"error": "Failed to fetch FII/DII data"}), 500
+@app.route("/api/market-quote")
+def market_quote():
+    if not is_token_valid():
+        return jsonify({"error": "Not authenticated", "auth_required": True}), 401
+    symbol = request.args.get("symbol", "NSE_INDEX:Nifty 50")
+    try:
+        resp = requests.get(
+            f"https://api.upstox.com/v2/market-quote/quotes?symbol={symbol}",
+            headers=get_headers(),
+            timeout=15
+        )
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route("/api/gainers-losers")
-def gainers_losers():
-    data = get_nse_data("https://www.nseindia.com/api/live-analysis-variations?index=gainers")
-    if data:
-        return jsonify(data)
-    return jsonify({"error": "Failed to fetch gainers/losers"}), 500
-
-@app.route("/api/most-active")
-def most_active():
-    data = get_nse_data("https://www.nseindia.com/api/live-analysis-variations?index=mostactive")
-    if data:
-        return jsonify(data)
-    return jsonify({"error": "Failed to fetch most active"}), 500
+@app.route("/api/ltp")
+def ltp():
+    if not is_token_valid():
+        return jsonify({"error": "Not authenticated", "auth_required": True}), 401
+    symbols = request.args.get("symbols", "NSE_INDEX:Nifty 50,NSE_INDEX:Nifty Bank")
+    try:
+        resp = requests.get(
+            f"https://api.upstox.com/v2/market-quote/ltp?symbol={symbols}",
+            headers=get_headers(),
+            timeout=15
+        )
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    import os
-    refresh_nse_cookies()
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False)
