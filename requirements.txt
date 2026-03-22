@@ -2,3 +2,10 @@ flask==3.0.0
 flask-cors==4.0.0
 requests==2.31.0
 gunicorn==21.2.0
+pytz==2024.1
+python-telegram-bot==20.7
+pyotp==2.9.0
+upstox-python-sdk==2.0.0
+schedule==1.2.1
+pandas==2.1.4
+numpy==1.26.3
