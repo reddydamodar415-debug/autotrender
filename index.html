@@ -750,6 +750,259 @@ window.addEventListener('load', async () => {
   updateMemBadges();
 });
 window.addEventListener('resize',()=>{if(activeTab==='dashboard'){drawTrend();drawCP();}});
+
+  // ═══════════════════════════════════════════════════════
+  // AUTOTRENDER NXT — PERMANENT INTEGRATION v1.0
+  // Telegram Bot + Upstox Token Refresh + Futures Engine
+  // ═══════════════════════════════════════════════════════
+  (function initPermanentFeatures() {
+
+      // ── CONFIG ──
+      const TG_TOKEN   = '8304018193:AAHSI-VJ2R1lKTg6TS-afKg8E88X-o_cHPw';
+      const TG_CHAT    = '1739813994';
+      const API_KEY    = '0e181209-1711-4ce7-9446-7b80489d1811';
+      const API_SECRET = 'njohnmx6es';
+      const REDIRECT   = 'https://reddydamodar415-debug.github.io/autotrender';
+      const AUTH_URL   = 'https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=' + API_KEY + '&redirect_uri=' + encodeURIComponent(REDIRECT);
+
+      window.TG_TOKEN = TG_TOKEN;
+      window.TG_CHAT  = TG_CHAT;
+
+      // ── TELEGRAM SEND ──
+      window.sendTelegram = async function(msg) {
+            try {
+                    const r = await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
+                              method: 'POST', headers: {'Content-Type':'application/json'},
+                              body: JSON.stringify({chat_id: TG_CHAT, text: msg, parse_mode: 'HTML'})
+                    });
+                    const d = await r.json(); return d.ok;
+            } catch(e) { return false; }
+      };
+
+      // ── FORMAT SIGNAL ──
+      window.formatTgSignal = function(e) {
+            const em = e.signal==='LONG'?'🟢':'🔴';
+            const act = e.signal==='LONG'?'📈 BUY SIGNAL':'📉 SELL SIGNAL';
+            return em+' <b>AutoTrender NXT Alert</b>\n━━━━━━━━━━━━━━━━━\n'+act+'\n📊 <b>Symbol:</b> '+e.sym+'\n💰 <b>Price:</b> ₹'+parseFloat(e.price).toLocaleString('en-IN')+'\n📉 <b>RSI:</b> '+e.rsi+'\n📊 <b>PCR:</b> '+e.pcr+'\n📍 <b>vs VWAP:</b> '+e.vwapPos+'\n💪 <b>Strength:</b> '+e.strength+'\n🕐 <b>Time:</b> '+e.time+'\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3 | Live Alerts</i>';
+                                                                                                                                                                                                                                                                  };
+
+      // ── EXCHANGE CODE → TOKEN ──
+      window.exchangeUpstoxCode = async function(code) {
+            const body = new URLSearchParams({code, client_id: API_KEY, client_secret: API_SECRET, redirect_uri: REDIRECT, grant_type: 'authorization_code'});
+            const r = await fetch('https://api.upstox.com/v2/login/authorization/token', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body: body.toString()});
+            return await r.json();
+      };
+
+      // ── ACTIVATE TOKEN ──
+      window.activateUpstoxToken = function(token) {
+            localStorage.setItem('upstox_token', token);
+            localStorage.setItem('upstox_token_time', new Date().toISOString());
+            window.upstoxToken = token;
+            const inp = document.getElementById('tokenInput'); if(inp) inp.value = token;
+            window.serverOnline = true; window.isLive = true;
+            if(typeof window.setDataBadge==='function') window.setDataBadge(true);
+            const el = document.querySelector('.data-badge');
+            if(el){el.className='data-badge live';el.innerHTML='<div class="dd" style="background:#10b981"></div>LIVE';}
+            if(typeof window.fetchAllData==='function') window.fetchAllData();
+            updateTokenTimer();
+            window.sendTelegram('🔑 <b>Upstox Token Refreshed!</b>\n━━━━━━━━━━━━━━━━━\n✅ New token activated\n👤 User: AW2016\n⏰ Time: '+new Date().toLocaleTimeString('en-IN')+'\n🟢 Status: LIVE MODE ACTIVE\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3</i>');
+            const btn = document.getElementById('refreshTokenBtn');
+            if(btn){btn.innerHTML='✅ Token Active!';btn.style.background='#10b981';setTimeout(()=>{btn.innerHTML='🔑 Refresh Token';btn.style.background='#f59e0b';},3000);}
+            if(typeof showToast==='function') showToast('✅ Upstox token refreshed — LIVE mode active!','live');
+      };
+
+      // ── CHECK URL FOR CODE ──
+      window.checkUrlForCode = function() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            if(code){
+                    window.history.replaceState({},'',window.location.pathname);
+                    window.exchangeUpstoxCode(code).then(data => {
+                              if(data.access_token) window.activateUpstoxToken(data.access_token);
+                    }).catch(console.error);
+            }
+      };
+
+      // ── TOKEN EXPIRY TIMER ──
+      function updateTokenTimer() {
+            const el = document.getElementById('tokenTimerText'); if(!el) return;
+            const saved = localStorage.getItem('upstox_token_time');
+            if(!saved){el.textContent='🔑 No token';return;}
+            const midnight = new Date(saved); midnight.setHours(23,59,59,0);
+            const diff = midnight - new Date();
+            if(diff<=0){el.textContent='⚠️ Token Expired!';el.style.color='#ef4444';return;}
+            const h=Math.floor(diff/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+            el.textContent='🔑 Expires in: '+h+'h '+m+'m '+s+'s';
+            el.style.color=h<1?'#ef4444':h<2?'#f59e0b':'#10b981';
+      }
+      window.updateTokenTimer = updateTokenTimer;
+      setInterval(updateTokenTimer, 1000);
+
+      // ── ONE-CLICK REFRESH BUTTON ──
+      window.refreshUpstoxToken = function() {
+            const btn = document.getElementById('refreshTokenBtn');
+            if(btn){btn.innerHTML='⏳ Waiting for login...';btn.style.background='#6366f1';}
+            const popup = window.open(AUTH_URL,'upstox_login','width=500,height=700,top=100,left=400,toolbar=no,menubar=no,scrollbars=yes');
+            const poll = setInterval(()=>{
+                    try {
+                              const url = popup.location.href;
+                              if(url && url.includes('code=')){
+                                          const code = new URLSearchParams(new URL(url).search).get('code');
+                                          popup.close(); clearInterval(poll);
+                                          if(btn) btn.innerHTML='🔄 Exchanging...';
+                                          window.exchangeUpstoxCode(code).then(data=>{
+                                                        if(data.access_token) window.activateUpstoxToken(data.access_token);
+                                                        else {if(btn){btn.innerHTML='❌ Failed';btn.style.background='#ef4444';setTimeout(()=>{btn.innerHTML='🔑 Refresh Token';btn.style.background='#f59e0b';},3000);}}
+                                          });
+                              }
+                    } catch(e){}
+                    if(popup.closed){clearInterval(poll);if(btn){btn.innerHTML='🔑 Refresh Token';btn.style.background='#f59e0b';}}
+            },500);
+      };
+
+      // ── ADD UI ELEMENTS ──
+      function addUI() {
+            // Telegram status in banner
+            const banner = document.getElementById('serverBanner');
+            if(banner && !document.getElementById('tgStatusBadge')){
+                    const tg = document.createElement('span');
+                    tg.id='tgStatusBadge';
+                    tg.innerHTML=' &nbsp;|&nbsp; 📲 <b>Telegram: @niftyfutures_mybot</b> <span style="color:#10b981">● CONNECTED</span> &nbsp;|&nbsp; <span style="color:#10b981">🔑 Upstox: AW2016 ● LIVE</span>';
+                    tg.style.cssText='font-size:12px;color:#94a3b8;';
+                    banner.appendChild(tg);
+            }
+            // Refresh token button
+            const tokenBar = document.getElementById('tokenInput')?.closest('div');
+            if(tokenBar && !document.getElementById('refreshTokenBtn')){
+                    const btn = document.createElement('button');
+                    btn.id='refreshTokenBtn'; btn.innerHTML='🔑 Refresh Token';
+                    btn.style.cssText='background:#f59e0b;color:#0f172a;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--mono);margin-left:10px;box-shadow:0 2px 10px rgba(245,158,11,.4);white-space:nowrap;';
+                    btn.onclick = window.refreshUpstoxToken;
+                    const timer = document.createElement('span');
+                    timer.id='tokenTimerText';
+                    timer.style.cssText='font-size:11px;font-family:var(--mono);color:#10b981;margin-left:12px;font-weight:600;';
+                    timer.textContent='🔑 Checking...';
+                    tokenBar.appendChild(btn); tokenBar.appendChild(timer);
+            }
+      }
+
+      // ── FUTURES ENGINE ──
+      const FC = {instruments:['NIFTY','BANKNIFTY','SENSEX'],lotSizes:{NIFTY:75,BANKNIFTY:35,SENSEX:10},lotsPerTrade:3,maxTradesPerDay:5,maxDailyLoss:5000,startTime:'09:30',squareOffTime:'15:25',summaryTime:'15:35',target:50,stopLoss:30};
+      window.FUTURES_CONFIG = FC;
+      window.FUTURES_STATE  = {tradesCount:0,dailyPnL:0,activeTrades:{},tradeLog:[],lastSignal:{},summaryDone:false,squareOffDone:false};
+
+      window.getTimeStr = function(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');};
+
+      window.getOTMStrike = function(sym,dir){
+            const md=window.marketData?.[sym]; if(!md) return null;
+            const cfg=window.SYMS?.[sym]; if(!cfg) return null;
+            const price=md.livePrice||md.prices?.[md.prices.length-1],atm=Math.round(price/cfg.step)*cfg.step;
+            return dir==='BUY'?{strike:atm+(2*cfg.step),type:'CE',atm}:{strike:atm-(2*cfg.step),type:'PE',atm};
+      };
+
+      window.sendSignalAlert = function(sym,sig,price,rsi,pcr,strike){
+            const em=sig==='BUY'?'🟢':'🔴';
+            window.sendTelegram(em+' <b>SIGNAL ALERT</b>\n━━━━━━━━━━━━━━━━━\n📊 <b>'+sym+' FUTURES</b>\n🎯 Signal: <b>'+sig+'</b>\n💰 Price: <b>₹'+parseFloat(price).toLocaleString('en-IN')+'</b>\n📉 RSI: <b>'+rsi+'</b>\n📊 PCR: <b>'+pcr+'</b>\n🏹 Strike: <b>'+(strike?.strike)+' '+(strike?.type)+' (2 OTM)</b>\n⏰ Time: <b>'+new Date().toLocaleTimeString('en-IN')+'</b>\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3</i>');
+      };
+
+      window.sendOrderAlert = function(sym,sig,price,lots,lotSize,strike){
+            const em=sig==='BUY'?'📈':'📉';
+            window.sendTelegram(em+' <b>ORDER PLACED</b>\n━━━━━━━━━━━━━━━━━\n📊 <b>'+sym+' FUTURES</b>\n🎯 Direction: <b>'+sig+'</b>\n💰 Entry: <b>₹'+parseFloat(price).toLocaleString('en-IN')+'</b>\n📦 Lots: <b>'+lots+' ('+lots*lotSize+' qty)</b>\n🎯 Target: <b>₹'+(parseFloat(price)+(sig==='BUY'?50:-50)).toLocaleString('en-IN')+'</b>\n🛑 SL: <b>₹'+(parseFloat(price)+(sig==='BUY'?-30:30)).toLocaleString('en-IN')+'</b>\n🏹 Options: <b>'+(strike?.strike)+' '+(strike?.type)+'</b>\n⏰ Time: <b>'+new Date().toLocaleTimeString('en-IN')+'</b>\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3</i>');
+      };
+
+      window.sendExitAlert = function(sym,exitType,entry,exit,pnl,lots,lotSize){
+            const em=exitType==='TARGET'?'✅':exitType==='SL'?'❌':'🔔';
+            window.sendTelegram(em+' <b>'+exitType+' HIT</b>\n━━━━━━━━━━━━━━━━━\n📊 <b>'+sym+' FUTURES</b>\n📍 Entry: <b>₹'+parseFloat(entry).toLocaleString('en-IN')+'</b>\n📍 Exit: <b>₹'+parseFloat(exit).toLocaleString('en-IN')+'</b>\n'+(pnl>=0?'💰':'💸')+' P&L: <b>'+(pnl>=0?'+':'')+'₹'+pnl.toLocaleString('en-IN')+'</b>\n📊 Daily P&L: <b>'+(window.FUTURES_STATE.dailyPnL>=0?'+':'')+'₹'+window.FUTURES_STATE.dailyPnL.toLocaleString('en-IN')+'</b>\n⏰ '+new Date().toLocaleTimeString('en-IN')+'\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3</i>');
+      };
+
+      window.sendDailySummary = function(){
+            const st=window.FUTURES_STATE;
+            const w=st.tradeLog.filter(t=>t.pnl>0).length,l=st.tradeLog.filter(t=>t.pnl<=0).length;
+            const best=st.tradeLog.reduce((a,b)=>a.pnl>b.pnl?a:b,{pnl:0,sym:'-'});
+            const worst=st.tradeLog.reduce((a,b)=>a.pnl<b.pnl?a:b,{pnl:0,sym:'-'});
+            window.sendTelegram('📊 <b>DAILY SUMMARY</b>\n━━━━━━━━━━━━━━━━━\n📅 '+new Date().toLocaleDateString('en-IN')+'\n'+(st.dailyPnL>=0?'💰':'💸')+' P&L: <b>'+(st.dailyPnL>=0?'+':'')+'₹'+st.dailyPnL.toLocaleString('en-IN')+'</b>\n📈 Trades: <b>'+st.tradesCount+'</b>\n✅ Winners: <b>'+w+'</b> ❌ Losers: <b>'+l+'</b>\n🏆 Best: <b>'+best.sym+' +₹'+best.pnl+'</b>\n💀 Worst: <b>'+worst.sym+' ₹'+worst.pnl+'</b>\n━━━━━━━━━━━━━━━━━\n<i>AutoTrender NXT v3 | End of Day</i>');
+            st.summaryDone=true;
+      };
+
+      window.squareOffAll = function(reason){
+            const st=window.FUTURES_STATE;
+            Object.keys(st.activeTrades).forEach(sym=>{
+                    const trade=st.activeTrades[sym],md=window.marketData?.[sym];
+                    const exitPrice=md?.livePrice||md?.prices?.slice(-1)[0]||trade.entryPrice;
+                    const pts=trade.signal==='BUY'?exitPrice-trade.entryPrice:trade.entryPrice-exitPrice;
+                    const pnl=Math.round(pts*trade.lots*FC.lotSizes[sym]);
+                    st.dailyPnL+=pnl; st.tradeLog.push({sym,signal:trade.signal,entryPrice:trade.entryPrice,exitPrice,pnl,exitType:reason});
+                    window.sendExitAlert(sym,reason,trade.entryPrice,exitPrice,pnl,trade.lots,FC.lotSizes[sym]);
+                    delete st.activeTrades[sym];
+            });
+            st.squareOffDone=true;
+      };
+
+      window.futuresScan = function(){
+            const st=window.FUTURES_STATE,now=window.getTimeStr();
+            if(now==='09:00'){window.FUTURES_STATE={tradesCount:0,dailyPnL:0,activeTrades:{},tradeLog:[],lastSignal:{},summaryDone:false,squareOffDone:false};}
+            if(now>=FC.squareOffTime&&!st.squareOffDone){window.squareOffAll('SQUARE-OFF');return;}
+            if(now===FC.summaryTime&&!st.summaryDone){window.sendDailySummary();return;}
+            if(now<FC.startTime||now>=FC.squareOffTime) return;
+            if(st.dailyPnL<=-FC.maxDailyLoss){if(!st.maxLossSent){st.maxLossSent=true;window.sendTelegram('🚨 <b>MAX LOSS HIT</b>\n💸 ₹'+Math.abs(st.dailyPnL)+'\n🛑 Trading STOPPED');window.squareOffAll('MAX-LOSS');}return;}
+            if(st.tradesCount>=FC.maxTradesPerDay) return;
+            FC.instruments.forEach(sym=>{
+                    const md=window.marketData?.[sym]; if(!md) return;
+                    const rsi=md.rsis?.slice(-1)[0]||50,pcr=md.pcr||1,price=md.livePrice||md.prices?.slice(-1)[0];
+                    let signal=null; if(rsi<30) signal='BUY'; else if(rsi>70) signal='SELL'; if(!signal) return;
+                    if(st.lastSignal[sym]===signal) return; st.lastSignal[sym]=signal;
+                    const active=st.activeTrades[sym];
+                    if(active){
+                              const pts=active.signal==='BUY'?price-active.entryPrice:active.entryPrice-price;
+                              if(pts>=FC.target){const pnl=Math.round(pts*active.lots*FC.lotSizes[sym]);st.dailyPnL+=pnl;st.tradeLog.push({sym,pnl,exitType:'TARGET'});window.sendExitAlert(sym,'TARGET',active.entryPrice,price,pnl,active.lots,FC.lotSizes[sym]);delete st.activeTrades[sym];}
+                              else if(pts<=-FC.stopLoss){const pnl=Math.round(pts*active.lots*FC.lotSizes[sym]);st.dailyPnL+=pnl;st.tradeLog.push({sym,pnl,exitType:'SL'});window.sendExitAlert(sym,'SL',active.entryPrice,price,pnl,active.lots,FC.lotSizes[sym]);delete st.activeTrades[sym];}
+                              return;
+                    }
+                    if(st.tradesCount>=FC.maxTradesPerDay||st.dailyPnL<=-FC.maxDailyLoss) return;
+                    const strike=window.getOTMStrike(sym,signal);
+                    st.tradesCount++; st.activeTrades[sym]={signal,entryPrice:price,lots:FC.lotsPerTrade,entryTime:new Date().toLocaleTimeString('en-IN')};
+                    window.sendSignalAlert(sym,signal,price,rsi,pcr,strike);
+                    setTimeout(()=>window.sendOrderAlert(sym,signal,price,FC.lotsPerTrade,FC.lotSizes[sym],strike),2000);
+            });
+      };
+
+      // Target/SL check every 15s
+      setInterval(()=>{
+            const st=window.FUTURES_STATE;
+            Object.keys(st.activeTrades).forEach(sym=>{
+                    const trade=st.activeTrades[sym],md=window.marketData?.[sym]; if(!md) return;
+                    const price=md.livePrice||md.prices?.slice(-1)[0];
+                    const pts=trade.signal==='BUY'?price-trade.entryPrice:trade.entryPrice-price;
+                    if(pts>=FC.target){const pnl=Math.round(pts*trade.lots*FC.lotSizes[sym]);st.dailyPnL+=pnl;st.tradeLog.push({sym,pnl,exitType:'TARGET'});window.sendExitAlert(sym,'TARGET',trade.entryPrice,price,pnl,trade.lots,FC.lotSizes[sym]);delete st.activeTrades[sym];}
+                    else if(pts<=-FC.stopLoss){const pnl=Math.round(pts*trade.lots*FC.lotSizes[sym]);st.dailyPnL+=pnl;st.tradeLog.push({sym,pnl,exitType:'SL'});window.sendExitAlert(sym,'SL',trade.entryPrice,price,pnl,trade.lots,FC.lotSizes[sym]);delete st.activeTrades[sym];}
+            });
+      },15000);
+
+      // Futures scan every 3min
+      setInterval(window.futuresScan, 180000);
+
+      // Daily reminder
+      setInterval(()=>{
+            const n=new Date(),h=n.getHours(),m=n.getMinutes();
+            if(h===8&&m===55){const t=localStorage.getItem('last_token_reminder');const today=n.toDateString();if(t!==today){localStorage.setItem('last_token_reminder',today);window.sendTelegram('⏰ <b>Token Refresh Reminder!</b>\n🔑 Refresh Upstox token before market opens!\n👉 Open AutoTrender and click 🔑 Refresh Token\n🚀 Futures scan starts 9:30 AM');}}
+      },60000);
+
+      // ── INIT ON PAGE LOAD ──
+      window.addEventListener('load', function() {
+            setTimeout(()=>{
+                    addUI();
+                    updateTokenTimer();
+                    checkUrlForCode();
+                    // Restore token if exists
+                    const savedToken = localStorage.getItem('upstox_token');
+                    if(savedToken && !window.upstoxToken){
+                              window.upstoxToken = savedToken;
+                              const inp=document.getElementById('tokenInput'); if(inp) inp.value=savedToken;
+                    }
+            }, 1500);
+      });
+
+  })();
 </script>
 </body>
 </html>
