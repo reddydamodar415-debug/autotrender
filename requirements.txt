@@ -6,6 +6,3 @@ pytz==2024.1
 python-telegram-bot==20.7
 pyotp==2.9.0
 schedule==1.2.1
-pandas==2.2.2
-numpy==2.0.0
-upstox-python-sdk==2.0.0
