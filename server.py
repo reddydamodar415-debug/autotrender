@@ -608,23 +608,33 @@ def trigger_refresh():
 @app.route("/api/aria", methods=["POST"])
 def aria_proxy():
     try:
-        ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not ANTHROPIC_API_KEY:
-            return jsonify({"error": {"message": "ANTHROPIC_API_KEY not set on server"}}), 500
-        payload = request.get_json()
-        if not payload:
-            return jsonify({"error": {"message": "No payload"}}), 400
+        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+        if not GEMINI_API_KEY:
+            return jsonify({"error": {"message": "GEMINI_API_KEY not set on server"}}), 500
+        payload = request.get_json() or {}
+        system_prompt = payload.get("system", "You are ARIA, an expert Indian stock market AI coach.")
+        messages = payload.get("messages", [])
+        max_tokens = payload.get("max_tokens", 1000)
+        # Convert Claude-style messages to Gemini format
+        gemini_contents = []
+        for msg in messages:
+            role = "user" if msg.get("role") == "user" else "model"
+            gemini_contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+        gemini_payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": gemini_contents,
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
+        }
         resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json=payload,
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+            headers={"Content-Type": "application/json"},
+            json=gemini_payload,
             timeout=30
         )
-        return jsonify(resp.json()), resp.status_code
+        data = resp.json()
+        # Convert Gemini response to Claude-style format
+        text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "No response.")
+        return jsonify({"content": [{"text": text}]}), 200
     except Exception as e:
         return jsonify({"error": {"message": str(e)}}), 500
 
