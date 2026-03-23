@@ -490,7 +490,7 @@ def get_indices():
     try:
         symbols = ",".join(UPSTOX_SYMBOLS.values())
         resp = requests.get(
-            f"https://api.upstox.com/v2/market-quote/quotes?symbol={symbols}",
+            f"https://api.upstox.com/v2/market-quote/quotes?instrument_key={symbols}",
             headers=get_headers(), timeout=15
         )
         data = resp.json()
@@ -578,10 +578,10 @@ def sectors():
 @app.route("/api/upstox/quotes")
 def upstox_quotes():
     token   = request.args.get("token", TOKEN_STORE.get("access_token") or "")
-    symbols = request.args.get("symbols", "NSE_INDEX:Nifty 50,NSE_INDEX:Nifty Bank,BSE_INDEX:SENSEX")
+    symbols = request.args.get("symbols", "NSE_INDEX|Nifty 50,NSE_INDEX|Nifty Bank,BSE_INDEX|SENSEX")
     try:
         r = requests.get(
-            f"https://api.upstox.com/v2/market-quote/ltp?symbol={symbols}",
+            f"https://api.upstox.com/v2/market-quote/ltp?instrument_key={symbols}",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15
         )
