@@ -605,6 +605,29 @@ def trigger_refresh():
     t.start()
     return jsonify({"message": "Token refresh triggered in background"})
 
+@app.route("/api/aria", methods=["POST"])
+def aria_proxy():
+    try:
+        ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not ANTHROPIC_API_KEY:
+            return jsonify({"error": {"message": "ANTHROPIC_API_KEY not set on server"}}), 500
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": {"message": "No payload"}}), 400
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"error": {"message": str(e)}}), 500
+
 # ── STARTUP ───────────────────────────────────────────────────────────────────
 def start_background_bot():
     t = threading.Thread(target=bot_loop, daemon=True)
