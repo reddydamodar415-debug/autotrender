@@ -632,8 +632,15 @@ def aria_proxy():
             timeout=30
         )
         data = resp.json()
+        # Handle Gemini errors
+        if "error" in data:
+            err_msg = data["error"].get("message", "Gemini API error")
+            return jsonify({"content": [{"text": f"⚠️ AI Error: {err_msg[:120]}"}]}), 200
         # Convert Gemini response to Claude-style format
-        text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "No response.")
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return jsonify({"content": [{"text": "⚠️ No response from AI. Try again in a moment."}]}), 200
+        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "No response.")
         return jsonify({"content": [{"text": text}]}), 200
     except Exception as e:
         return jsonify({"error": {"message": str(e)}}), 500
